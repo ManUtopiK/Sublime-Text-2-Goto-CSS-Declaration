@@ -24,7 +24,7 @@ class GotoCssDeclarationCommand(sublime_plugin.TextCommand):
         css_files = settings.get("css_files", "[]")
 
 
-        def goto_decl(f_class, f_id):
+        def goto_decl(f_class, f_id, view):
             '''Returns "next" or "prev" nearest class or id '''
 
             if f_class or f_id:
@@ -32,7 +32,6 @@ class GotoCssDeclarationCommand(sublime_plugin.TextCommand):
                 region  = lambda x, y: y if min_max(x, y) else x if min_max(y, x) else False
 
                 found_reg = region(f_class, f_id)
-
                 sel = view.sel()
                 sel.clear()
                 sel.add(found_reg)
@@ -49,21 +48,42 @@ class GotoCssDeclarationCommand(sublime_plugin.TextCommand):
             return file_type in css_files
 
 
+        def find_others_file():
+            class_or_id = self.get_class_or_id();
+            win = sublime.active_window()
+            founded = None
+            for view in win.views():
+                if is_css(view.file_name()):
+                    view.settings().set('class_or_id', class_or_id)
+
+                    if  goto_decl(
+                            view.find("\." + class_or_id, 0),
+                            view.find("\#" + class_or_id, 0),
+                            view
+                        ):
+                        win.focus_view(view)
+                        founded = True
+
+            if not founded: sublime.status_message("not found [ " + class_or_id + " ]")
+
+
         view = self.view
         self.cur_pos   = view.sel()[0].a
         self.scope_reg = view.extract_scope(self.cur_pos)
 
         # if current window == css styles file
         if is_css(view.file_name()):
-            class_or_id = view.settings().get('class_or_id')
+            class_or_id = self.get_class_or_id()
 
             if class_or_id :
 
                 if  goto == "next":
-                    goto_decl(
-                        view.find("\." + class_or_id, self.cur_pos + 1),
-                        view.find("\#" + class_or_id, self.cur_pos + 1)
-                    )
+                    if not goto_decl(
+                            view.find("\." + class_or_id, self.cur_pos + 1),
+                            view.find("\#" + class_or_id, self.cur_pos + 1),
+                            view
+                        ):
+                        find_others_file()
 
                 else: # goto == "prev"
                     prev     = lambda x: filter(lambda y: y.a < self.cur_pos, x)
@@ -71,25 +91,14 @@ class GotoCssDeclarationCommand(sublime_plugin.TextCommand):
 
                     goto_decl(
                         previous(view.find_all("\." + class_or_id)),
-                        previous(view.find_all("\#" + class_or_id))
+                        previous(view.find_all("\#" + class_or_id)),
+                        view
                     )
 
         # go to opened CSS file and find in them
         else:
-            class_or_id = self.get_class_or_id();
-            win = sublime.active_window()
-            for view in win.views():
-                if is_css(view.file_name()):
-                    view.settings().set('class_or_id', class_or_id)
+            find_others_file()
 
-                    if  goto_decl(
-                            view.find("\." + class_or_id, 0),
-                            view.find("\#" + class_or_id, 0)
-                        ):
-                        win.focus_view(view)
-
-                    else:
-                        sublime.status_message("not found [ " + class_or_id + " ]")
 
 
     def get_class_or_id(self):
@@ -117,6 +126,7 @@ class GotoCssDeclarationCommand(sublime_plugin.TextCommand):
         if get_sym(left) in all_delims: left += 1
 
         right = self.cur_pos
+        if get_sym(right) in rule_type: right +=1
         while right < self.scope_reg.b and get_sym(right) not in all_delims:
             right += 1
 
